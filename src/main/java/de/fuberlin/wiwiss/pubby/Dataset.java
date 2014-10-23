@@ -24,10 +24,10 @@ import de.fuberlin.wiwiss.pubby.vocab.CONF;
 public class Dataset extends ResourceReader {
 	private final DataSource dataSource;
 	private final MetadataConfiguration metadata;
-	
+
 	// TODO: This is a rather dirty hack. We may need DataSource.getProvenance() or something
 	private RemoteSPARQLDataSource sparqlDataSource = null;
-	
+
 	public Dataset(Resource dataset, Configuration configuration) {
 		super(dataset);
 		dataSource = buildDataSource(configuration);
@@ -37,19 +37,19 @@ public class Dataset extends ResourceReader {
 	public DataSource getDataSource() {
 		return dataSource;
 	}
-	
+
 	public MetadataConfiguration getMetadataConfiguration() {
 		return metadata;
 	}
-	
+
 	public boolean supportsIRIs() {
 		return getBoolean(CONF.supportsIRIs, true);
 	}
-	
+
 	public boolean addSameAsStatements() {
 		return getBoolean(CONF.addSameAsStatements, false);
 	}
-	
+
 	public boolean supportsSPARQL11() {
 		return getBoolean(CONF.supportsSPARQL11, false);
 	}
@@ -58,20 +58,20 @@ public class Dataset extends ResourceReader {
 	 * Gets all values of <tt>conf:browsableNamespace</tt> declared on the
 	 * dataset resource. Does not include values inherited from the
 	 * configuration resource.
-	 *  
+	 *
 	 * @return Namespace IRIs of browsable namespaces
 	 */
 	public Set<String> getBrowsableNamespaces() {
 		return getIRIs(CONF.browsableNamespace);
 	}
-	
+
 
 	private DataSource buildDataSource(Configuration configuration) {
 		requireExactlyOneOf(CONF.sparqlEndpoint, CONF.loadRDF);
 
 		DataSource result;
 		if (hasProperty(CONF.sparqlEndpoint)) {
-			
+
 			// SPARQL data source
 			String endpointURL = getIRI(CONF.sparqlEndpoint);
 			String defaultGraphURI = getIRI(CONF.sparqlDefaultGraph);
@@ -96,9 +96,9 @@ public class Dataset extends ResourceReader {
 				sparqlDataSource.addGraphQueryParam(param);
 			}
 			result = sparqlDataSource;
-			
+
 		} else {
-			
+
 			// File data source
 			Model data = ModelFactory.createDefaultModel();
 			for (String fileName: getIRIs(CONF.loadRDF)) {
@@ -106,13 +106,13 @@ public class Dataset extends ResourceReader {
 				// to resolve relative URIs in the file. Having file:/// URIs in
 				// there would likely not be useful to anyone.
 				fileName = IRIResolver.resolveGlobal(fileName);
-				String base = (fileName.startsWith("file:/") ? 
+				String base = (fileName.startsWith("file:/") ?
 						configuration.getWebApplicationBaseURI() : fileName);
 
 				try {
 					Model m = FileManager.get().loadModel(fileName, base, null);
 					data.add(m);
-				
+
 					// We'd like to do simply data.setNsPrefix(m), but that leaves relative
 					// namespace URIs like <#> unresolved, so we do a big dance to make them
 					// absolute.
@@ -137,15 +137,15 @@ public class Dataset extends ResourceReader {
 				}
 			};
 		}
-		
+
 		IRIRewriter rewriter = IRIRewriter.identity;
-		
+
 		// If conf:datasetBase is set (and different from conf:webBase),
 		// rewrite the IRIs accordingly
 		// Base IRI for IRIs considered to be "in" the data source
-		String fullWebBase = configuration.getWebApplicationBaseURI() + 
+		String fullWebBase = configuration.getWebApplicationBaseURI() +
 				configuration.getWebResourcePrefix();
-		String datasetBase = getIRI(CONF.datasetBase, 
+		String datasetBase = getIRI(CONF.datasetBase,
 				fullWebBase);
 		if (!datasetBase.equals(fullWebBase)) {
 			rewriter = IRIRewriter.createNamespaceBased(datasetBase, fullWebBase);
@@ -168,18 +168,18 @@ public class Dataset extends ResourceReader {
 
 		// Filter the dataset to keep only those resources in the datasetBase
 		// and in browsable namespaces, unless it's an annotation provider
-		if (!hasType(CONF.AnnotationProvider)) {
-			result = new FilteredDataSource(result) {
-				@Override
-				public boolean canDescribe(String absoluteIRI) {
-					for (String namespace: browsableNamespaces) {
-						if (absoluteIRI.startsWith(namespace)) return true;
-					}
-					return false;
-				}
-			};
-		}
-		
+		// if (!hasType(CONF.AnnotationProvider)) {
+		// 	result = new FilteredDataSource(result) {
+		// 		@Override
+		// 		public boolean canDescribe(String absoluteIRI) {
+		// 			for (String namespace: browsableNamespaces) {
+		// 				if (absoluteIRI.startsWith(namespace)) return true;
+		// 			}
+		// 			return false;
+		// 		}
+		// 	};
+		// }
+
 		return result;
 	}
 }

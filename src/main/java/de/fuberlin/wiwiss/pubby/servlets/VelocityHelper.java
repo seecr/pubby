@@ -18,19 +18,19 @@ import org.apache.velocity.context.Context;
  * servlet response output stream.
  */
 public class VelocityHelper {
-	private final static String VELOCITY_ENGINE = 
+	private final static String VELOCITY_ENGINE =
 		VelocityHelper.class.getName() + ".VELOCITY_ENGINE";
-	
+
 	private final ServletContext servletContext;
 	private final HttpServletResponse response;
 	private final Context velocityContext;
-	
+
 	public VelocityHelper(ServletContext servletContext, HttpServletResponse response) {
 		this.servletContext = servletContext;
 		this.response = response;
 		this.velocityContext = new VelocityContext();
 	}
-	
+
 	/**
 	 * @return A receptacle for template variables
 	 */
@@ -47,14 +47,14 @@ public class VelocityHelper {
 		response.addHeader("Pragma", "no-cache");
 		try {
 			OutputStreamWriter writer = new OutputStreamWriter(response.getOutputStream(), "utf-8");
-			getVelocityEngine().mergeTemplate(templateName, velocityContext, 
+			getVelocityEngine().mergeTemplate(templateName, velocityContext,
 					writer);
 			writer.close();
 		} catch (Exception ex) {
 			throw new RuntimeException(ex);
 		}
 	}
-	
+
 	private VelocityEngine getVelocityEngine() {
 		synchronized (servletContext) {
 			if (servletContext.getAttribute(VELOCITY_ENGINE) == null) {
@@ -63,25 +63,25 @@ public class VelocityHelper {
 			return (VelocityEngine) servletContext.getAttribute(VELOCITY_ENGINE);
 		}
 	}
-	
+
 	private VelocityEngine createVelocityEngine() {
 		try {
 			VelocityEngine result = new VelocityEngine();
 			result.setProperty("output.encoding", "utf-8");
-			result.setProperty("file.resource.loader.path", 
+			result.setProperty("file.resource.loader.path",
 					servletContext.getRealPath("/") + "/WEB-INF/templates/");
-			result.setProperty("velocimacro.context.localscope", true);
-			
+			// result.setProperty("velocimacro.context.localscope", true);
+
 			// Turn off Velocity logging
-			result.setProperty("runtime.log.logsystem.class", 
+			result.setProperty("runtime.log.logsystem.class",
 					"org.apache.velocity.runtime.log.NullLogSystem");
-			
+
 			// XML-escape *all* references inserted into templates
 			result.setProperty("eventhandler.referenceinsertion.class", EscapeXmlReference.class.getName());
-			
+
 			// Enable caching
 			result.setProperty("file.resource.loader.cache", true);
-			
+
 			result.init();
 			return result;
 		} catch (Exception ex) {
