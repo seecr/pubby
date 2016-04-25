@@ -1,6 +1,7 @@
 package de.fuberlin.wiwiss.pubby.sources;
 
 import java.io.InputStream;
+import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -29,6 +30,7 @@ import com.hp.hpl.jena.rdf.model.Resource;
 import com.hp.hpl.jena.rdf.model.ResourceFactory;
 import com.hp.hpl.jena.sparql.engine.http.HttpQuery;
 import com.hp.hpl.jena.sparql.engine.http.QueryEngineHTTP;
+import com.hp.hpl.jena.sparql.engine.http.QueryExceptionHTTP;
 
 import de.fuberlin.wiwiss.pubby.ConfigurationException;
 import de.fuberlin.wiwiss.pubby.VocabularyStore.CachedPropertyCollection;
@@ -47,22 +49,22 @@ public class RemoteSPARQLDataSource implements DataSource {
 	private final Set<String> inversePropertyQueries;
 	private final Set<String> anonPropertyQueries;
 	private final Set<String> anonInversePropertyQueries;
-	
+
 	private final CachedPropertyCollection highIndegreeProperties;
 	private final CachedPropertyCollection highOutdegreeProperties;
-	
+
 	private String previousDescribeQuery;
 	private String contentType = null;
 	private final Set<String[]> queryParamsSelect = new HashSet<String[]>();
 	private final Set<String[]> queryParamsGraph = new HashSet<String[]>();
-	
+
 	public RemoteSPARQLDataSource(String endpointURL, String defaultGraphURI) {
 		this(endpointURL, defaultGraphURI, false, null, null, null, null, null, null, null);
 	}
-	
+
 	public RemoteSPARQLDataSource(String endpointURL, String defaultGraphURI,
 			boolean supportsSPARQL11,
-			Set<String> resourceQueries, 
+			Set<String> resourceQueries,
 			Set<String> propertyQueries, Set<String> inversePropertyQueries,
 			Set<String> anonPropertyQueries, Set<String> anonInversePropertyQueries,
 			CachedPropertyCollection highIndegreeProperties, CachedPropertyCollection highOutdegreeProperties) {
@@ -98,11 +100,11 @@ public class RemoteSPARQLDataSource implements DataSource {
 		this.inversePropertyQueries = inversePropertyQueries;
 		this.anonPropertyQueries = anonPropertyQueries;
 		this.anonInversePropertyQueries = anonInversePropertyQueries;
-		
+
 		this.highIndegreeProperties = highIndegreeProperties;
 		this.highOutdegreeProperties = highOutdegreeProperties;
 	}
-	
+
 	/**
 	 * Sets the content type to ask for in graph requests (CONSTRUCT and
 	 * DESCRIBE) to the remote SPARQL endpoint.
@@ -114,22 +116,22 @@ public class RemoteSPARQLDataSource implements DataSource {
 	public void addGraphQueryParam(String param) {
 		queryParamsGraph.add(parseQueryParam(param));
 	}
-	
+
 	public void addSelectQueryParam(String param) {
 		queryParamsSelect.add(parseQueryParam(param));
 	}
-	
+
 	private String[] parseQueryParam(String param) {
 		Matcher match = queryParamPattern.matcher(param);
 		if (!match.matches()) {
-			throw new ConfigurationException("Query parameter \"" + param + 
+			throw new ConfigurationException("Query parameter \"" + param +
 					"\" is not in \"param=value\" form");
 		}
 		return new String[]{match.group(1), match.group(2)};
 	}
-	
+
 	private Pattern queryParamPattern = Pattern.compile("(.*?)=(.*)");
-			
+
 	@Override
 	public boolean canDescribe(String absoluteIRI) {
 		return true;
@@ -168,11 +170,11 @@ public class RemoteSPARQLDataSource implements DataSource {
 				"  ?__this__ ?p ?o. " +
 				"  FILTER (?p IN ?__high_outdegree_properties__)" +
 				"}" +
-				"GROUP BY ?p", 
+				"GROUP BY ?p",
 				resourceURI);
 	}
 
-	private Map<Property, Integer> getHighDegreeProperties(String query, 
+	private Map<Property, Integer> getHighDegreeProperties(String query,
 			String resourceURI) {
 		if (!supportsSPARQL11) return null;
 		query = preProcessQuery(query, resourceURI);
@@ -189,7 +191,7 @@ public class RemoteSPARQLDataSource implements DataSource {
 	}
 
 	@Override
-	public Model listPropertyValues(String resourceURI, Property property, 
+	public Model listPropertyValues(String resourceURI, Property property,
 			boolean isInverse) {
 		// Loop over the queries, join results in a single model.
 		// Process each query to replace place-holders of the given resource and property.
@@ -205,7 +207,7 @@ public class RemoteSPARQLDataSource implements DataSource {
 		}
 		return model;
 	}
-	
+
 	@Override
 	public List<Resource> getIndex() {
 		List<Resource> result = new ArrayList<Resource>();
@@ -233,7 +235,7 @@ public class RemoteSPARQLDataSource implements DataSource {
 	public String getPreviousDescribeQuery() {
 		return previousDescribeQuery;
 	}
-	
+
 	private Model execQueryGraph(String query) {
 		Model model = ModelFactory.createDefaultModel();
 		previousDescribeQuery = query;
@@ -243,7 +245,7 @@ public class RemoteSPARQLDataSource implements DataSource {
 		// vendor-specific sections of the query, we use the lower-level
 		// com.hp.hpl.jena.sparql.engine.http.HttpQuery to execute the query and
 		// read the results into model.
-		
+
 		HttpQuery httpQuery = new HttpQuery(endpointURL);
 		httpQuery.addParam("query", query);
 		if (defaultGraphURI != null) {
@@ -252,14 +254,21 @@ public class RemoteSPARQLDataSource implements DataSource {
 		for (String[] param: queryParamsGraph) {
 			httpQuery.addParam(param[0], param[1]);
 		}
-		
+
 		// The rest is more or less a copy of QueryEngineHTTP.execModel()
 		httpQuery.setAccept(contentType);
-		InputStream in = httpQuery.exec();
+		InputStream in;
+		String actualContentType = "text/plain";
+		try {
+			in = httpQuery.exec();
+			// Don't assume the endpoint actually gives back the content type we
+			// asked for
+			actualContentType = httpQuery.getContentType();
+		} catch (QueryExceptionHTTP e) {
+			e.printStackTrace();
+			in = new ByteArrayInputStream(new byte[0]);
+		}
 
-		// Don't assume the endpoint actually gives back the content type we
-		// asked for
-		String actualContentType = httpQuery.getContentType();
 
 		// If the server fails to return a Content-Type then we will assume
 		// the server returned the type we asked for
@@ -271,7 +280,7 @@ public class RemoteSPARQLDataSource implements DataSource {
 		// type
 		Lang lang = WebContent.contentTypeToLang(actualContentType);
 		if (!RDFLanguages.isTriples(lang))
-			throw new QueryException("Endpoint <" + endpointURL + 
+			throw new QueryException("Endpoint <" + endpointURL +
 					"> returned Content Type: " + actualContentType
 					+ " which is not a supported RDF graph syntax");
 		RDFDataMgr.read(model, in, lang);
@@ -283,10 +292,10 @@ public class RemoteSPARQLDataSource implements DataSource {
             	model.removeNsPrefix(prefix);
             }
         }
-		
+
 		return model;
 	}
-	
+
 	private ResultSet execQuerySelect(String query) {
 		QueryEngineHTTP endpoint = new QueryEngineHTTP(endpointURL, query);
 		if (defaultGraphURI != null) {
@@ -297,23 +306,23 @@ public class RemoteSPARQLDataSource implements DataSource {
 		}
 		return endpoint.execSelect();
 	}
-	
+
 	private String preProcessQuery(String query, String resourceURI) {
 		return preProcessQuery(query, resourceURI, null);
 	}
-	
+
 	private String preProcessQuery(String query, String resourceURI, Property property) {
 		String result = replaceString(query, "?__this__", "<" + resourceURI + ">");
 		if (property != null) {
 			result = replaceString(result, "?__property__", "<" + property.getURI() + ">");
 		}
-		result = replaceString(result, "?__high_indegree_properties__", 
+		result = replaceString(result, "?__high_indegree_properties__",
 				toSPARQLArgumentList(highIndegreeProperties == null ? null : highIndegreeProperties.get()));
-		result = replaceString(result, "?__high_outdegree_properties__", 
+		result = replaceString(result, "?__high_outdegree_properties__",
 				toSPARQLArgumentList(highOutdegreeProperties == null ? null : highOutdegreeProperties.get()));
 		return result;
 	}
-	
+
 	private String replaceString(String text, String searchString, String replacement) {
 		int start = 0;
 		int end = text.indexOf(searchString, start);
@@ -331,7 +340,7 @@ public class RemoteSPARQLDataSource implements DataSource {
 		buf.append(text.substring(start));
 		return buf.toString();
 	}
-	
+
 	private String toSPARQLArgumentList(Collection<? extends RDFNode> values) {
 		if (values == null) return "()";
 		StringBuilder result = new StringBuilder();
@@ -347,7 +356,7 @@ public class RemoteSPARQLDataSource implements DataSource {
 				result.append('>');
 			} else {
 				throw new IllegalArgumentException(
-						"toSPARQLArgumentList is only implemented for URIs; " + 
+						"toSPARQLArgumentList is only implemented for URIs; " +
 						"called with term " + term);
 			}
 			isFirst = false;
